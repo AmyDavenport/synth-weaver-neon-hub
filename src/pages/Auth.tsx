@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { getAuthErrorMessage } from '@/lib/errorUtils';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -33,7 +34,7 @@ const Auth = () => {
         if (error) {
           toast({
             title: "Login Failed",
-            description: error.message,
+            description: getAuthErrorMessage(error),
             variant: "destructive",
           });
         } else {
@@ -44,21 +45,34 @@ const Auth = () => {
           navigate('/dashboard');
         }
       } else {
-        const { error } = await signUp(email, password, username);
+        // Client-side username validation
+        const trimmedUsername = username.trim();
+        if (trimmedUsername && (trimmedUsername.length < 3 || trimmedUsername.length > 30)) {
+          toast({
+            title: "Invalid Username",
+            description: "Username must be between 3 and 30 characters.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+        if (trimmedUsername && !/^[a-zA-Z0-9_-]+$/.test(trimmedUsername)) {
+          toast({
+            title: "Invalid Username",
+            description: "Username can only contain letters, numbers, underscores, and hyphens.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        const { error } = await signUp(email, password, trimmedUsername);
         if (error) {
-          if (error.message.includes('already registered')) {
-            toast({
-              title: "Account Exists",
-              description: "This email is already registered. Try logging in.",
-              variant: "destructive",
-            });
-          } else {
-            toast({
-              title: "Signup Failed",
-              description: error.message,
-              variant: "destructive",
-            });
-          }
+          toast({
+            title: "Signup Failed",
+            description: getAuthErrorMessage(error),
+            variant: "destructive",
+          });
         } else {
           toast({
             title: "Account Created!",
