@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Navigation } from '@/components/layout/Navigation';
 import { Footer } from '@/components/layout/Footer';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { getUserFriendlyError } from '@/lib/errorUtils';
 
 interface GitHubRepo {
   id: number;
@@ -95,10 +96,10 @@ const GitHubSync = () => {
       if (data?.repos) {
         setRepos(data.repos);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Failed to fetch repositories",
-        description: error.message || "An error occurred",
+        description: getUserFriendlyError(error, 'fetchGitHubRepos'),
         variant: "destructive",
       });
     } finally {
@@ -148,10 +149,10 @@ const GitHubSync = () => {
         // Fetch repos via proxy
         fetchGitHubRepos();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Connection failed",
-        description: error.message || "Invalid token or GitHub API error.",
+        description: getUserFriendlyError(error, 'connectGitHub'),
         variant: "destructive",
       });
     } finally {
@@ -202,10 +203,10 @@ const GitHubSync = () => {
       });
 
       setSelectedRepos(new Set());
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Sync failed",
-        description: error.message || "An error occurred",
+        description: getUserFriendlyError(error, 'syncRepos'),
         variant: "destructive",
       });
     } finally {

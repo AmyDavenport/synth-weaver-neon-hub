@@ -16,6 +16,7 @@ import { CreateRepoDialog } from '@/components/dashboard/CreateRepoDialog';
 import { GitOperationsPanel } from '@/components/dashboard/GitOperationsPanel';
 import { CoPilotChat } from '@/components/dashboard/CoPilotChat';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { getUserFriendlyError } from '@/lib/errorUtils';
 
 interface Repository {
   id: string;
@@ -63,7 +64,7 @@ const Dashboard = () => {
     if (error) {
       toast({
         title: "Error loading repositories",
-        description: error.message,
+        description: getUserFriendlyError(error, 'fetchRepos'),
         variant: "destructive",
       });
     } else {

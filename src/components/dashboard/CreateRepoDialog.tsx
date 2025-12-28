@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { getUserFriendlyError } from '@/lib/errorUtils';
 
 interface CreateRepoDialogProps {
   open: boolean;
@@ -58,10 +59,10 @@ export const CreateRepoDialog = ({ open, onOpenChange, onCreated }: CreateRepoDi
       setVisibility('private');
       onOpenChange(false);
       onCreated();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Failed to create repository",
-        description: error.message,
+        description: getUserFriendlyError(error, 'createRepository'),
         variant: "destructive",
       });
     } finally {

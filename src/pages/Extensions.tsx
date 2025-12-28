@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Navigation } from '@/components/layout/Navigation';
 import { Footer } from '@/components/layout/Footer';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { getUserFriendlyError } from '@/lib/errorUtils';
 
 interface Extension {
   id: string;
@@ -78,7 +79,7 @@ const Extensions = () => {
     if (error) {
       toast({
         title: "Installation failed",
-        description: error.message,
+        description: getUserFriendlyError(error, 'installExtension'),
         variant: "destructive",
       });
     } else {
@@ -100,7 +101,7 @@ const Extensions = () => {
     if (error) {
       toast({
         title: "Uninstall failed",
-        description: error.message,
+        description: getUserFriendlyError(error, 'uninstallExtension'),
         variant: "destructive",
       });
     } else {

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
+import { getUserFriendlyError } from '@/lib/errorUtils';
 
 interface Repository {
   id: string;
@@ -57,7 +58,7 @@ export const RepositoryCard = ({ repo, viewMode, onSelect, onRefresh }: Reposito
     if (error) {
       toast({
         title: "Failed to delete",
-        description: error.message,
+        description: getUserFriendlyError(error, 'deleteRepository'),
         variant: "destructive",
       });
     } else {
