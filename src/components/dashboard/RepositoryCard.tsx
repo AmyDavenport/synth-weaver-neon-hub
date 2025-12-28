@@ -24,6 +24,7 @@ interface RepositoryCardProps {
   viewMode: 'grid' | 'list';
   onSelect: () => void;
   onRefresh: () => void;
+  isOwner?: boolean;
 }
 
 const visibilityIcons = {
@@ -41,7 +42,7 @@ const languageColors: Record<string, string> = {
   default: 'bg-muted-foreground',
 };
 
-export const RepositoryCard = ({ repo, viewMode, onSelect, onRefresh }: RepositoryCardProps) => {
+export const RepositoryCard = ({ repo, viewMode, onSelect, onRefresh, isOwner = true }: RepositoryCardProps) => {
   const { toast } = useToast();
   const VisibilityIcon = visibilityIcons[repo.visibility as keyof typeof visibilityIcons] || Lock;
   const langColor = languageColors[repo.language || ''] || languageColors.default;
@@ -113,14 +114,16 @@ export const RepositoryCard = ({ repo, viewMode, onSelect, onRefresh }: Reposito
               <Clock className="w-4 h-4" />
               <span className="text-sm">{formatDistanceToNow(new Date(repo.updated_at), { addSuffix: true })}</span>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleDelete}
-              className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {isOwner && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDelete}
+                className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -168,14 +171,16 @@ export const RepositoryCard = ({ repo, viewMode, onSelect, onRefresh }: Reposito
             <span>{repo.forks_count}</span>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleDelete}
-          className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10"
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        {isOwner && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleDelete}
+            className="w-8 h-8 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-1 text-muted-foreground mt-3 pt-3 border-t border-border">
