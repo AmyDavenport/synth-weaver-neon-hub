@@ -231,9 +231,26 @@ serve(async (req) => {
           Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
+        let syncedCount = 0;
         for (const repo of reposToSync) {
           if (!repo.id || !repo.name) continue;
           
+          const githubRepoId = String(repo.id);
+          
+          // Check if this github_repo_id is already owned by another user
+          const { data: existing } = await serviceClient
+            .from('repositories')
+            .select('user_id')
+            .eq('github_repo_id', githubRepoId)
+            .single();
+          
+          // If repo exists and belongs to another user, skip it (don't hijack)
+          if (existing && existing.user_id !== user.id) {
+            console.log(`Skipping repo ${githubRepoId} - belongs to another user`);
+            continue;
+          }
+          
+          // Safe to upsert - either new repo or owned by this user
           await serviceClient.from('repositories').upsert({
             user_id: user.id,
             name: String(repo.name).slice(0, 255),
@@ -242,20 +259,23 @@ serve(async (req) => {
             language: repo.language ? String(repo.language).slice(0, 50) : null,
             stars_count: Number(repo.stargazers_count) || 0,
             forks_count: Number(repo.forks_count) || 0,
-            github_repo_id: String(repo.id),
+            github_repo_id: githubRepoId,
             github_full_name: repo.full_name ? String(repo.full_name).slice(0, 255) : null,
             clone_url: repo.clone_url ? String(repo.clone_url).slice(0, 500) : null,
             is_synced: true,
             last_synced_at: new Date().toISOString(),
           }, {
-            onConflict: 'github_repo_id',
+            // Use composite constraint: user_id + github_repo_id
+            onConflict: 'user_id,github_repo_id',
           });
+          
+          syncedCount++;
         }
 
-        console.log(`Synced ${reposToSync.length} repos for user ${user.id}`);
+        console.log(`Synced ${syncedCount} repos for user ${user.id}`);
 
         return new Response(
-          JSON.stringify({ success: true, syncedCount: reposToSync.length }),
+          JSON.stringify({ success: true, syncedCount }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
