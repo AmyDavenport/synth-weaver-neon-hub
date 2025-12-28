@@ -6,6 +6,65 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// In-memory rate limiting (per-instance, resets on cold start)
+const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(userId: string): { allowed: boolean; resetIn?: number } {
+  const now = Date.now();
+  const limit = rateLimits.get(userId);
+  const maxRequests = 10; // 10 requests per minute
+  const windowMs = 60000; // 1 minute
+
+  if (!limit || now > limit.resetAt) {
+    rateLimits.set(userId, { count: 1, resetAt: now + windowMs });
+    return { allowed: true };
+  }
+
+  if (limit.count >= maxRequests) {
+    return { allowed: false, resetIn: Math.ceil((limit.resetAt - now) / 1000) };
+  }
+
+  limit.count++;
+  return { allowed: true };
+}
+
+// Validate message structure
+function validateMessages(messages: unknown): { valid: boolean; error?: string } {
+  if (!Array.isArray(messages)) {
+    return { valid: false, error: 'Messages must be an array' };
+  }
+
+  if (messages.length === 0) {
+    return { valid: false, error: 'Messages array cannot be empty' };
+  }
+
+  if (messages.length > 50) {
+    return { valid: false, error: 'Too many messages (max 50)' };
+  }
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    
+    if (!msg || typeof msg !== 'object') {
+      return { valid: false, error: `Invalid message at index ${i}` };
+    }
+
+    if (!msg.role || !['user', 'assistant'].includes(msg.role)) {
+      return { valid: false, error: `Invalid role at index ${i}` };
+    }
+
+    if (typeof msg.content !== 'string') {
+      return { valid: false, error: `Content must be a string at index ${i}` };
+    }
+
+    if (msg.content.length > 10000) {
+      return { valid: false, error: `Message content too long at index ${i} (max 10000 chars)` };
+    }
+  }
+
+  return { valid: true };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -37,9 +96,30 @@ serve(async (req) => {
       );
     }
 
+    // Rate limiting
+    const rateCheck = checkRateLimit(user.id);
+    if (!rateCheck.allowed) {
+      console.warn(`Rate limit exceeded for user ${user.id}`);
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Try again in ${rateCheck.resetIn} seconds.` }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log('Authenticated user:', user.id);
 
     const { messages } = await req.json();
+    
+    // Validate messages
+    const validation = validateMessages(messages);
+    if (!validation.valid) {
+      console.error('Message validation failed:', validation.error);
+      return new Response(
+        JSON.stringify({ error: validation.error }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
     if (!LOVABLE_API_KEY) {

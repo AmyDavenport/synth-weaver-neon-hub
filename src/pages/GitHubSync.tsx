@@ -35,6 +35,7 @@ const GitHubSync = () => {
   const [syncing, setSyncing] = useState(false);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [selectedRepos, setSelectedRepos] = useState<Set<number>>(new Set());
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -49,37 +50,55 @@ const GitHubSync = () => {
   }, [user]);
 
   const checkConnection = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('github_access_token')
-      .eq('user_id', user?.id)
-      .single();
+    try {
+      // Check connection status via edge function (token never exposed to client)
+      const { data, error } = await supabase.functions.invoke('github-proxy', {
+        body: { action: 'fetch_repos' }
+      });
 
-    if (data?.github_access_token) {
-      setIsConnected(true);
-      setGithubToken(data.github_access_token);
-      fetchGitHubRepos(data.github_access_token);
+      if (error) {
+        console.log('Not connected to GitHub');
+        setIsConnected(false);
+        return;
+      }
+
+      if (data?.connected && data?.repos) {
+        setIsConnected(true);
+        setRepos(data.repos);
+        
+        // Get username from profile (safe field)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('github_username')
+          .eq('user_id', user?.id)
+          .single();
+        
+        if (profile?.github_username) {
+          setGithubUsername(profile.github_username);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking connection:', error);
+      setIsConnected(false);
     }
   };
 
-  const fetchGitHubRepos = async (token: string) => {
+  const fetchGitHubRepos = async () => {
     setLoading(true);
     try {
-      const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github.v3+json',
-        },
+      const { data, error } = await supabase.functions.invoke('github-proxy', {
+        body: { action: 'fetch_repos' }
       });
 
-      if (!response.ok) throw new Error('Failed to fetch repos');
+      if (error) throw error;
 
-      const data = await response.json();
-      setRepos(data);
+      if (data?.repos) {
+        setRepos(data.repos);
+      }
     } catch (error: any) {
       toast({
         title: "Failed to fetch repositories",
-        description: error.message,
+        description: error.message || "An error occurred",
         variant: "destructive",
       });
     } finally {
@@ -97,40 +116,42 @@ const GitHubSync = () => {
       return;
     }
 
+    // Basic token format validation
+    if (!githubToken.startsWith('ghp_')) {
+      toast({
+        title: "Invalid token format",
+        description: "GitHub personal access tokens start with 'ghp_'",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      // Verify token
-      const response = await fetch('https://api.github.com/user', {
-        headers: {
-          Authorization: `Bearer ${githubToken}`,
-          Accept: 'application/vnd.github.v3+json',
-        },
+      // Verify and store token via edge function (token never stored in client state after this)
+      const { data, error } = await supabase.functions.invoke('github-proxy', {
+        body: { action: 'verify', token: githubToken }
       });
 
-      if (!response.ok) throw new Error('Invalid token');
+      if (error) throw error;
 
-      const userData = await response.json();
+      if (data?.success) {
+        setIsConnected(true);
+        setGithubUsername(data.username);
+        setGithubToken(''); // Clear token from client memory immediately
+        
+        toast({
+          title: "GitHub Connected!",
+          description: `Welcome, ${data.username}!`,
+        });
 
-      // Save token to profile
-      await supabase
-        .from('profiles')
-        .update({
-          github_access_token: githubToken,
-          github_username: userData.login,
-        })
-        .eq('user_id', user?.id);
-
-      setIsConnected(true);
-      toast({
-        title: "GitHub Connected!",
-        description: `Welcome, ${userData.login}!`,
-      });
-
-      fetchGitHubRepos(githubToken);
+        // Fetch repos via proxy
+        fetchGitHubRepos();
+      }
     } catch (error: any) {
       toast({
         title: "Connection failed",
-        description: "Invalid token or GitHub API error.",
+        description: error.message || "Invalid token or GitHub API error.",
         variant: "destructive",
       });
     } finally {
@@ -166,35 +187,25 @@ const GitHubSync = () => {
     const reposToSync = repos.filter((r) => selectedRepos.has(r.id));
 
     try {
-      for (const repo of reposToSync) {
-        await supabase.from('repositories').upsert({
-          user_id: user?.id,
-          name: repo.name,
-          description: repo.description,
-          visibility: repo.private ? 'private' : 'public',
-          language: repo.language,
-          stars_count: repo.stargazers_count,
-          forks_count: repo.forks_count,
-          github_repo_id: repo.id.toString(),
-          github_full_name: repo.full_name,
-          clone_url: repo.clone_url,
-          is_synced: true,
-          last_synced_at: new Date().toISOString(),
-        }, {
-          onConflict: 'github_repo_id',
-        });
-      }
+      const { data, error } = await supabase.functions.invoke('github-proxy', {
+        body: { 
+          action: 'sync_repos', 
+          repoData: reposToSync 
+        }
+      });
+
+      if (error) throw error;
 
       toast({
         title: "Sync complete!",
-        description: `${reposToSync.length} repositories synced.`,
+        description: `${data?.syncedCount || reposToSync.length} repositories synced.`,
       });
 
       setSelectedRepos(new Set());
     } catch (error: any) {
       toast({
         title: "Sync failed",
-        description: error.message,
+        description: error.message || "An error occurred",
         variant: "destructive",
       });
     } finally {
@@ -282,7 +293,9 @@ const GitHubSync = () => {
                       <Check className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <p className="text-foreground font-medium">GitHub Connected</p>
+                      <p className="text-foreground font-medium">
+                        GitHub Connected {githubUsername && `(@${githubUsername})`}
+                      </p>
                       <p className="text-muted-foreground text-sm">{repos.length} repositories found</p>
                     </div>
                   </div>
